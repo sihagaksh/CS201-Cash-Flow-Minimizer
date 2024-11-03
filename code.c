@@ -78,3 +78,59 @@ int main(){
         handleUserInput();
     }
 }
+
+void addExpense(){
+    char description[100];
+    double amount;
+    int paidBy, splitCount;
+    int splitBetween[MAX_USERS];
+
+    printf("Enter the description of the expense: ");
+    scanf("%s", description);
+    printf("Enter the amount paid:- ");
+    scanf("%lf", &amount);
+
+    printUsers();
+    printf("Enter the ID of the person who paid: ");
+    scanf("%d", &paidBy);
+
+    printf("Enter the number of users splitting the expense: ");
+    scanf("%d", &splitCount);
+
+    if (splitCount == userCount) {
+        for (int i = 0; i < userCount; i++) {
+            splitBetween[i] = users[i].id;  
+        }
+    } else {
+        printf("Enter the IDs of the users splitting the expense (separated by space): ");
+        for (int i = 0; i < splitCount; i++) {
+            scanf("%d", &splitBetween[i]);
+        }
+    }
+
+    expenses[expenseCount].id = expenseCount + 1;
+    strcpy(expenses[expenseCount].description, description);
+    expenses[expenseCount].amount = amount;
+    expenses[expenseCount].paidBy = paidBy;
+    expenses[expenseCount].splitCount = splitCount;
+    
+    for (int i = 0; i < splitCount; i++) {
+        expenses[expenseCount].splitBetween[i] = splitBetween[i];
+    }
+
+    double splitAmount = amount / splitCount;
+
+    for (int i = 0; i < splitCount; i++) {
+        users[splitBetween[i] - 1].balance -= splitAmount;
+    }
+    users[paidBy - 1].balance += amount;
+    expenseCount++;
+    printf("Expense added successfully: %s - Amount: %.2f paid by %s\n", description, amount, users[paidBy - 1].name);
+}
+
+void printUsers(){
+    printf("List of users:\n");
+    for (int i = 0; i < userCount; i++) {
+        printf("Id: %d, Name: %s\n", users[i].id, users[i].name);
+    }
+}
