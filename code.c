@@ -5,6 +5,7 @@
 #include<math.h>
 
 #define MAX_USERS 100
+#define EPSILON 1e-2
 
 typedef struct {
     int id;
@@ -21,11 +22,37 @@ typedef struct {
     int splitCount;
 } Expense;
 
+typedef struct {
+    double balance;
+    int index;
+} HeapNode;
+
+typedef struct {
+    HeapNode nodes[MAX_USERS];
+    int size;
+} MaxHeap, MinHeap;
+
 User users[MAX_USERS];
 int userCount = 0;
 
 Expense expenses[MAX_USERS];
 int expenseCount = 0;
+
+void printMenu();
+void handleUserInput();
+void printUsers();
+void printBalance();
+void addUser();
+void addExpense();
+void minimizeCashFlow(); // Add this line
+void insertMaxHeap(MaxHeap* heap, double balance, int index);
+void insertMinHeap(MinHeap* heap, double balance, int index);
+HeapNode extractMax(MaxHeap* heap);
+HeapNode extractMin(MinHeap* heap);
+void heapifyUpMax(MaxHeap* heap, int idx);
+void heapifyUpMin(MinHeap* heap, int idx);
+void heapifyDownMax(MaxHeap* heap, int idx);
+void heapifyDownMin(MinHeap* heap, int idx);
 
 void addUser(){
     char name[50];
@@ -94,60 +121,10 @@ void addExpense(){
     printf("Expense added successfully: %s - Amount: %.2f paid by %s\n", description, amount, users[paidBy - 1].name);
 }
 
-
 void printBalance(){
     printf("\nUser Balances:\n");
     for (int i = 0; i < userCount; i++) {
         printf("%s: %.2f\n", users[i].name, users[i].balance);
-    }
-}
-void calculateNetBalances(double netBalance[]) {
-    for (int i = 0; i < userCount; i++) {
-        netBalance[i] = users[i].balance;
-    }
-}
-
-int findMaxCreditor(double netBalance[]) {
-    int maxIdx = 0;
-    for (int i = 1; i < userCount; i++) {
-        if (netBalance[i] > netBalance[maxIdx]) {
-            maxIdx = i;
-        }
-    }
-    return maxIdx;
-}
-
-int findMaxDebtor(double netBalance[]) {
-    int maxIdx = 0;
-    for (int i = 1; i < userCount; i++) {
-        if (netBalance[i] < netBalance[maxIdx]) {
-            maxIdx = i;
-        }
-    }
-    return maxIdx;
-}
-
-void minimizeCashFlow() {
-    double netBalance[MAX_USERS] = {0};
-    double epsilon = 1e-2;
-
-    calculateNetBalances(netBalance);
-
-    while (1) {
-        int maxCreditor = findMaxCreditor(netBalance);
-        int maxDebtor = findMaxDebtor(netBalance);
-
-        if (fabs(netBalance[maxCreditor]) < epsilon && fabs(netBalance[maxDebtor]) < epsilon) {
-            printf("All transactions settled.\n");
-            break;
-        }
-
-        double settlementAmount = (netBalance[maxCreditor] < -netBalance[maxDebtor]) ? netBalance[maxCreditor] : -netBalance[maxDebtor];
-
-        netBalance[maxCreditor] -= settlementAmount;
-        netBalance[maxDebtor] += settlementAmount;
-
-        printf("%s pays %.2f to %s\n", users[maxDebtor].name, settlementAmount, users[maxCreditor].name);
     }
 }
 
@@ -183,6 +160,127 @@ void handleUserInput(){
         default:
             printf("Invalid choice! Please try again.\n");
     }
+}
+
+// Helper functions for heap operations
+void insertMaxHeap(MaxHeap* heap, double balance, int index) {
+    heap->nodes[heap->size].balance = balance;
+    heap->nodes[heap->size].index = index;
+    heapifyUpMax(heap, heap->size);
+    heap->size++;
+}
+
+void insertMinHeap(MinHeap* heap, double balance, int index) {
+    heap->nodes[heap->size].balance = balance;
+    heap->nodes[heap->size].index = index;
+    heapifyUpMin(heap, heap->size);
+    heap->size++;
+}
+
+HeapNode extractMax(MaxHeap* heap) {
+    HeapNode maxNode = heap->nodes[0];
+    heap->nodes[0] = heap->nodes[--heap->size];
+    heapifyDownMax(heap, 0);
+    return maxNode;
+}
+
+HeapNode extractMin(MinHeap* heap) {
+    HeapNode minNode = heap->nodes[0];
+    heap->nodes[0] = heap->nodes[--heap->size];
+    heapifyDownMin(heap, 0);
+    return minNode;
+}
+
+void heapifyUpMax(MaxHeap* heap, int idx) {
+    while (idx > 0 && heap->nodes[(idx - 1) / 2].balance < heap->nodes[idx].balance) {
+        HeapNode temp = heap->nodes[idx];
+        heap->nodes[idx] = heap->nodes[(idx - 1) / 2];
+        heap->nodes[(idx - 1) / 2] = temp;
+        idx = (idx - 1) / 2;
+    }
+}
+
+void heapifyUpMin(MinHeap* heap, int idx) {
+    while (idx > 0 && heap->nodes[(idx - 1) / 2].balance > heap->nodes[idx].balance) {
+        HeapNode temp = heap->nodes[idx];
+        heap->nodes[idx] = heap->nodes[(idx - 1) / 2];
+        heap->nodes[(idx - 1) / 2] = temp;
+        idx = (idx - 1) / 2;
+    }
+}
+
+void heapifyDownMax(MaxHeap* heap, int idx) {
+    int largest = idx;
+    int left = 2 * idx + 1;
+    int right = 2 * idx + 2;
+
+    if (left < heap->size && heap->nodes[left].balance > heap->nodes[largest].balance) {
+        largest = left;
+    }
+    if (right < heap->size && heap->nodes[right].balance > heap->nodes[largest].balance) {
+        largest = right;
+    }
+    if (largest != idx) {
+        HeapNode temp = heap->nodes[idx];
+        heap->nodes[idx] = heap->nodes[largest];
+        heap->nodes[largest] = temp;
+        heapifyDownMax(heap, largest);
+    }
+}
+
+void heapifyDownMin(MinHeap* heap, int idx) {
+    int smallest = idx;
+    int left = 2 * idx + 1;
+    int right = 2 * idx + 2;
+
+    if (left < heap->size && heap->nodes[left].balance < heap->nodes[smallest].balance) {
+        smallest = left;
+    }
+    if (right < heap->size && heap->nodes[right].balance < heap->nodes[smallest].balance) {
+        smallest = right;
+    }
+    if (smallest != idx) {
+        HeapNode temp = heap->nodes[idx];
+        heap->nodes[idx] = heap->nodes[smallest];
+        heap->nodes[smallest] = temp;
+        heapifyDownMin(heap, smallest);
+    }
+}
+
+
+void minimizeCashFlow() {
+    MaxHeap creditors = { .size = 0 };
+    MinHeap debtors = { .size = 0 };
+
+    for (int i = 0; i < userCount; i++) {
+        if (fabs(users[i].balance) > EPSILON) {
+            if (users[i].balance > 0) {
+                insertMaxHeap(&creditors, users[i].balance, i);
+            } else {
+                insertMinHeap(&debtors, users[i].balance, i);
+            }
+        }
+    }
+
+    while (creditors.size > 0 && debtors.size > 0) {
+        HeapNode maxCreditor = extractMax(&creditors);
+        HeapNode maxDebtor = extractMin(&debtors);
+
+        double settlementAmount = fmin(maxCreditor.balance, -maxDebtor.balance);
+        users[maxCreditor.index].balance -= settlementAmount;
+        users[maxDebtor.index].balance += settlementAmount;
+
+        printf("%s pays %.2f to %s\n", users[maxDebtor.index].name, settlementAmount, users[maxCreditor.index].name);
+
+        if (users[maxCreditor.index].balance > EPSILON) {
+            insertMaxHeap(&creditors, users[maxCreditor.index].balance, maxCreditor.index);
+        }
+        if (users[maxDebtor.index].balance < -EPSILON) {
+            insertMinHeap(&debtors, users[maxDebtor.index].balance, maxDebtor.index);
+        }
+    }
+
+    printf("All transactions settled.\n");
 }
 
 int main(){
