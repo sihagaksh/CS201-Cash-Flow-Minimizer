@@ -3,8 +3,16 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include<math.h>
+#ifdef _WIN32
+#include <io.h>
+#define access _access
+#define F_OK 0
+#else
+#include <unistd.h>
+#endif
 
 #define MAX_USERS 100
+#define MAX_GROUPS 50
 #define EPSILON 1e-2
 
 typedef struct {
@@ -38,13 +46,15 @@ int userCount = 0;
 Expense expenses[MAX_USERS];
 int expenseCount = 0;
 
+char currentGroup[100];
+
 void printMenu();
 void handleUserInput();
 void printUsers();
 void printBalance();
 void addUser();
 void addExpense();
-void minimizeCashFlow(); // Add this line
+void minimizeCashFlow();
 void insertMaxHeap(MaxHeap* heap, double balance, int index);
 void insertMinHeap(MinHeap* heap, double balance, int index);
 HeapNode extractMax(MaxHeap* heap);
@@ -53,6 +63,16 @@ void heapifyUpMax(MaxHeap* heap, int idx);
 void heapifyUpMin(MinHeap* heap, int idx);
 void heapifyDownMax(MaxHeap* heap, int idx);
 void heapifyDownMin(MinHeap* heap, int idx);
+
+void saveData();
+void loadData(const char *group);
+void createFolderIfNotExists();
+int fileExists(const char *filename);
+void askToLoadData();
+void chooseGroup();
+void createNewGroup();
+void listExistingGroups();
+void setCurrentGroup(const char *group);
 
 void addUser(){
     char name[50];
@@ -144,15 +164,18 @@ void handleUserInput(){
     switch (choice) {
         case 1:
             addUser();
+            saveData();
             break;
         case 2:
             addExpense();
+            saveData();
             break;
         case 3:
             printBalance();
             break;
         case 4:
             minimizeCashFlow();
+            saveData();
             break;
         case 5:
             printf("Exiting the system. Goodbye!\n");
@@ -162,7 +185,6 @@ void handleUserInput(){
     }
 }
 
-// Helper functions for heap operations
 void insertMaxHeap(MaxHeap* heap, double balance, int index) {
     heap->nodes[heap->size].balance = balance;
     heap->nodes[heap->size].index = index;
@@ -247,7 +269,6 @@ void heapifyDownMin(MinHeap* heap, int idx) {
     }
 }
 
-
 void minimizeCashFlow() {
     MaxHeap creditors = { .size = 0 };
     MinHeap debtors = { .size = 0 };
@@ -284,8 +305,198 @@ void minimizeCashFlow() {
 }
 
 int main(){
+    printf("Welcome to the Cash Flow Minimizer!\n");
+    createFolderIfNotExists();
+    chooseGroup();      
+    askToLoadData();
     while(1){
         printMenu();
         handleUserInput();
     }
+}
+
+void createFolderIfNotExists() {
+    struct stat st = {0};
+    if (stat("group", &st) == -1) {
+        #ifdef _WIN32
+            mkdir("group");
+        #else
+            mkdir("group", 0700);
+        #endif
+    }
+}
+
+int fileExists(const char *filename) {
+    return access(filename, F_OK) != -1;
+}
+
+void chooseGroup() {
+    int choice;
+    printf("Choose an option:\n");
+    printf("1. Select an existing group\n");
+    printf("2. Create a new group\n");
+    printf("Enter your choice: ");
+    scanf("%d", &choice);
+
+    if (choice == 1) {
+        listExistingGroups();
+    } else if (choice == 2) {
+        createNewGroup();
+    } else {
+        printf("Invalid choice! Please try again.\n");
+        chooseGroup();
+    }
+}
+
+void listExistingGroups() {
+    struct stat st = {0};
+    char groupName[100];
+    FILE *fp;
+
+    printf("Existing groups:\n");
+
+    fp = fopen("group/groups_list.txt", "r");
+    if (fp == NULL) {
+        printf("No existing groups found. Please create a new group.\n");
+        createNewGroup();
+        return;
+    }
+
+    while (fscanf(fp, "%s", groupName) != EOF) {
+        printf("- %s\n", groupName);
+    }
+    fclose(fp);
+
+    printf("Enter the name of the group to select: ");
+    scanf("%s", groupName);
+
+    char path[150];
+    snprintf(path, sizeof(path), "group/%s", groupName);
+
+    if (stat(path, &st) == -1) {
+        printf("Group '%s' does not exist. Please create a new group.\n", groupName);
+        createNewGroup();
+    } else {
+        setCurrentGroup(groupName);
+    }
+}
+
+void createNewGroup() {
+    char groupName[100];
+
+    printf("Enter the name of the new group: ");
+    scanf("%s", groupName);
+
+    char path[150];
+    snprintf(path, sizeof(path), "group/%s", groupName);
+    #ifdef _WIN32
+        if (mkdir(path) == 0) {
+        printf("New group '%s' created successfully.\n", groupName);
+        setCurrentGroup(groupName);
+
+        FILE *fp = fopen("group/groups_list.txt", "a");
+        if (fp != NULL) {
+            fprintf(fp, "%s\n", groupName);
+            fclose(fp);
+        }
+    } else {
+        printf("Failed to create group '%s'.\n", groupName);
+    }
+    
+    #else
+        if (mkdir(path, 0700) == 0) {
+        printf("New group '%s' created successfully.\n", groupName);
+        setCurrentGroup(groupName);
+
+        FILE *fp = fopen("group/groups_list.txt", "a");
+        if (fp != NULL) {
+            fprintf(fp, "%s\n", groupName);
+            fclose(fp);
+        }
+    } else {
+        printf("Failed to create group '%s'.\n", groupName);
+    }
+
+    #endif
+    
+}
+
+void setCurrentGroup(const char *group) {
+    strcpy(currentGroup, group);
+    printf("Current group set to: %s\n", currentGroup);
+}
+
+void askToLoadData() {
+    char choice;
+    printf("Do you want to load existing data for group '%s'? (y/n): ", currentGroup);
+    scanf(" %c", &choice);
+
+    if (choice == 'y' || choice == 'Y') {
+        loadData(currentGroup);
+    } else {
+        printf("Starting with new data for group '%s'.\n", currentGroup);
+    }
+}
+
+void loadData(const char *group) {
+    char userFilePath[150], expenseFilePath[150];
+    snprintf(userFilePath, sizeof(userFilePath), "group/%s/users.txt", group);
+    snprintf(expenseFilePath, sizeof(expenseFilePath), "group/%s/expenses.txt", group);
+
+    FILE *userFile = fopen(userFilePath, "r");
+    FILE *expenseFile = fopen(expenseFilePath, "r");
+
+    if (userFile == NULL || expenseFile == NULL) {
+        printf("Error loading data for group '%s'. Starting fresh.\n", group);
+        return;
+    }
+
+    userCount = 0;
+    while (fscanf(userFile, "%d %s %lf", &users[userCount].id, users[userCount].name, &users[userCount].balance) == 3) {
+        userCount++;
+    }
+
+    expenseCount = 0;
+    while (fscanf(expenseFile, "%d %s %lf %d %d", &expenses[expenseCount].id, expenses[expenseCount].description, &expenses[expenseCount].amount, &expenses[expenseCount].paidBy, &expenses[expenseCount].splitCount) == 5) {
+        for (int i = 0; i < expenses[expenseCount].splitCount; i++) {
+            fscanf(expenseFile, "%d", &expenses[expenseCount].splitBetween[i]);
+        }
+        expenseCount++;
+    }
+
+    fclose(userFile);
+    fclose(expenseFile);
+
+    printf("Data for group '%s' loaded successfully.\n", group);
+}
+
+void saveData() {
+    char userFilePath[150], expenseFilePath[150];
+    snprintf(userFilePath, sizeof(userFilePath), "group/%s/users.txt", currentGroup);
+    snprintf(expenseFilePath, sizeof(expenseFilePath), "group/%s/expenses.txt", currentGroup);
+
+    FILE *userFile = fopen(userFilePath, "w");
+    FILE *expenseFile = fopen(expenseFilePath, "w");
+
+    if (userFile == NULL || expenseFile == NULL) {
+        printf("Error saving data for group '%s'.\n", currentGroup);
+        return;
+    }
+
+    for (int i = 0; i < userCount; i++) {
+        fprintf(userFile, "%d %s %.2f\n", users[i].id, users[i].name, users[i].balance);
+    }
+
+    for (int i = 0; i < expenseCount; i++) {
+        fprintf(expenseFile, "%d %s %.2f %d %d", expenses[i].id, expenses[i].description, expenses[i].amount, expenses[i].paidBy, expenses[i].splitCount);
+        for (int j = 0; j < expenses[i].splitCount; j++) {
+            fprintf(expenseFile, " %d", expenses[i].splitBetween[j]);
+        }
+        fprintf(expenseFile, "\n");
+    }
+
+    fclose(userFile);
+    fclose(expenseFile);
+
+    printf("Data for group '%s' saved successfully.\n", currentGroup);
 }
